@@ -1,4 +1,3 @@
-
 package myau.ui.components;
 
 import myau.Myau;
@@ -6,123 +5,161 @@ import myau.module.modules.HUD;
 import myau.ui.Component;
 import myau.ui.dataset.Slider;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
-import org.lwjgl.opengl.GL11;
 
+import java.awt.Color;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class SliderComponent implements Component {
-    private final Slider slider;
-    private final ModuleComponent parentModule;
-    private int offsetY;
-    private int x;
-    private int y;
-    private boolean dragging = false;
-    private double sliderWidth;
 
-    public SliderComponent(Slider slider, ModuleComponent parentModule, int offsetY) {
+    private static final int HEIGHT = 16;
+    private static final int PADDING_X = 4;
+    private static final int BAR_HEIGHT = 4;
+    private static final int BAR_Y_OFFSET = 11;
+    private static final int BACKGROUND_COLOR = new Color(30, 30, 30, 180).getRGB(); // -12302777 ≈ questo
+    private static final double TEXT_SCALE = 0.5;
+
+    private final Slider slider;
+    private final ModuleComponent parent;
+    private int offsetY;
+
+    private boolean dragging = false;
+    private double renderWidth = 0; // Larghezza renderizzata della barra (per animazioni future se vuoi)
+
+    public SliderComponent(Slider slider, ModuleComponent parent, int offsetY) {
         this.slider = slider;
-        this.parentModule = parentModule;
-        this.x = parentModule.category.getX() + parentModule.category.getWidth();
-        this.y = parentModule.category.getY() + parentModule.offsetY;
+        this.parent = parent;
         this.offsetY = offsetY;
     }
 
+    @Override
     public void draw(AtomicInteger offset) {
-        Gui.drawRect(this.parentModule.category.getX() + 4, this.parentModule.category.getY() + this.offsetY + 11, this.parentModule.category.getX() + 4 + this.parentModule.category.getWidth() - 8, this.parentModule.category.getY() + this.offsetY + 15, -12302777);
-        int sliderStart = this.parentModule.category.getX() + 4;
-        int sliderEnd = this.parentModule.category.getX() + 4 + (int) this.sliderWidth;
-        if (sliderEnd - sliderStart > 84) {
-            sliderEnd = sliderStart + 84;
-        }
-        Gui.drawRect(sliderStart, this.parentModule.category.getY() + this.offsetY + 11, sliderEnd, this.parentModule.category.getY() + this.offsetY + 15, ((HUD) Myau.moduleManager.modules.get(HUD.class)).getColor(System.currentTimeMillis(), offset.get()).getRGB());
-        GL11.glPushMatrix();
-        GL11.glScaled(0.5D, 0.5D, 0.5D);
-        Minecraft.getMinecraft().fontRendererObj.drawStringWithShadow(this.slider.getName() + ": " + this.slider.getValueString(), (float) ((int) ((float) (this.parentModule.category.getX() + 4) * 2.0F)), (float) ((int) ((float) (this.parentModule.category.getY() + this.offsetY + 3) * 2.0F)), -1);
-        GL11.glPopMatrix();
+        if (!isVisible()) return;
+
+        int x = parent.category.getX() + PADDING_X;
+        int y = parent.category.getY() + offsetY + BAR_Y_OFFSET;
+        int fullWidth = parent.category.getWidth() - 2 * PADDING_X;
+
+        // Sfondo barra
+        Gui.drawRect(x, y, x + fullWidth, y + BAR_HEIGHT, BACKGROUND_COLOR);
+
+        // Barra colorata (HUD color)
+        int hudColor = ((HUD) Myau.moduleManager.getModule(HUD.class))
+                .getColor(System.currentTimeMillis(), offset.get()).getRGB();
+
+        double ratio = (slider.getInput() - slider.getMin()) / (slider.getMax() - slider.getMin());
+        int filledWidth = (int) (fullWidth * ratio);
+
+        Gui.drawRect(x, y, x + filledWidth, y + BAR_HEIGHT, hudColor);
+
+        // Testo scalato (nome + valore)
+        FontRenderer fr = Minecraft.getMinecraft().fontRendererObj;
+        String text = slider.getName() + ": " + slider.getValueString();
+
+        fr.drawStringWithShadowScaled(
+                text,
+                (x) * (1 / TEXT_SCALE), // Posizione scalata inversa
+                (parent.category.getY() + offsetY + 3) * (1 / TEXT_SCALE),
+                -1,
+                (float) TEXT_SCALE
+        );
     }
 
+    @Override
     public void setComponentStartAt(int newOffsetY) {
         this.offsetY = newOffsetY;
     }
 
     @Override
     public int getHeight() {
-        return 16;
-    }
-
-    public void update(int mousePosX, int mousePosY) {
-        this.y = this.parentModule.category.getY() + this.offsetY;
-        this.x = this.parentModule.category.getX();
-
-        double d = Math.min(this.parentModule.category.getWidth() - 8, Math.max(0, mousePosX - this.x));
-        this.sliderWidth = (double) (this.parentModule.category.getWidth() - 8) *
-                (this.slider.getInput() - this.slider.getMin()) /
-                (this.slider.getMax() - this.slider.getMin());
-
-        if (this.dragging) {
-            if (d == 0.0D) {
-                this.slider.setValue(this.slider.getMin());
-            } else {
-                double rawValue = d / (double) (this.parentModule.category.getWidth() - 8)
-                        * (this.slider.getMax() - this.slider.getMin())
-                        + this.slider.getMin();
-
-                double increment = this.slider.getIncrement();
-                if (increment > 0) {
-                    rawValue = Math.round(rawValue / increment) * increment;
-                }
-                double n = roundToPrecision(rawValue, 2);
-                n = Math.max(this.slider.getMin(), Math.min(this.slider.getMax(), n));
-                this.slider.setValue(n);
-            }
-        }
-    }
-
-
-    private static double roundToPrecision(double v, int precision) {
-        if (precision < 0) {
-            return 0.0D;
-        } else {
-            BigDecimal bd = new BigDecimal(v);
-            bd = bd.setScale(precision, RoundingMode.HALF_UP);
-            return bd.doubleValue();
-        }
-    }
-
-    public void mouseDown(int x, int y, int button) {
-        if (this.isLeftHalfHovered(x, y) && button == 0 && this.parentModule.panelExpand) {
-            this.dragging = true;
-        }
-
-        if (this.isRightHalfHovered(x, y) && button == 0 && this.parentModule.panelExpand) {
-            this.dragging = true;
-        }
-
-    }
-
-    public void mouseReleased(int x, int y, int button) {
-        this.dragging = false;
+        return HEIGHT;
     }
 
     @Override
-    public void keyTyped(char chatTyped, int keyCode) {
+    public void update(int mouseX, int mouseY) {
+        if (!parent.isExpanded() || !isVisible()) return;
 
+        int barX = parent.category.getX() + PADDING_X;
+        int barY = parent.category.getY() + offsetY + BAR_Y_OFFSET;
+        int barWidth = parent.category.getWidth() - 2 * PADDING_X;
+
+        // Calcola larghezza renderizzata (puoi animarla in futuro con lerp)
+        double ratio = (slider.getInput() - slider.getMin()) / (slider.getMax() - slider.getMin());
+        renderWidth = barWidth * ratio;
+
+        if (dragging) {
+            double mouseProgress = Math.clamp((mouseX - barX) / (double) barWidth, 0.0, 1.0);
+            double newValue = slider.getMin() + mouseProgress * (slider.getMax() - slider.getMin());
+
+            // Applica incremento se presente
+            double increment = slider.getIncrement();
+            if (increment > 0) {
+                newValue = Math.round(newValue / increment) * increment;
+            }
+
+            // Arrotonda a 2 decimali per float puliti (opzionale, puoi rimuovere)
+            newValue = roundToDecimalPlaces(newValue, 2);
+
+            slider.setValue(Math.clamp(newValue, slider.getMin(), slider.getMax()));
+        }
     }
 
-    public boolean isLeftHalfHovered(int x, int y) {
-        return x > this.x && x < this.x + this.parentModule.category.getWidth() / 2 + 1 && y > this.y && y < this.y + 16;
+    private static double roundToDecimalPlaces(double value, int places) {
+        if (places < 0) return value;
+        BigDecimal bd = BigDecimal.valueOf(value);
+        bd = bd.setScale(places, RoundingMode.HALF_UP);
+        return bd.doubleValue();
     }
 
-    public boolean isRightHalfHovered(int x, int y) {
-        return x > this.x + this.parentModule.category.getWidth() / 2 && x < this.x + this.parentModule.category.getWidth() && y > this.y && y < this.y + 16;
+    @Override
+    public void mouseDown(int mouseX, int mouseY, int button) {
+        if (!parent.isExpanded() || !isVisible() || button != 0) return;
+
+        if (isHovered(mouseX, mouseY)) {
+            dragging = true;
+        }
     }
 
+    @Override
+    public void mouseReleased(int mouseX, int mouseY, int button) {
+        dragging = false;
+    }
+
+    @Override
+    public void keyTyped(char typedChar, int keyCode) {
+        // Puoi aggiungere supporto tastiera qui (es. frecce per cambiare valore)
+    }
+
+    private boolean isHovered(int mouseX, int mouseY) {
+        int x = parent.category.getX();
+        int y = parent.category.getY() + offsetY;
+        int width = parent.category.getWidth();
+        int height = HEIGHT;
+
+        return mouseX >= x && mouseX <= x + width
+                && mouseY >= y && mouseY <= y + height;
+    }
 
     @Override
     public boolean isVisible() {
         return slider.isVisible();
+    }
+
+    // Helper per clamp (Java 8 non ha Math.clamp, lo aggiungiamo)
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+}
+
+// Estensione utile per FontRenderer (aggiungila in una classe GuiUtils o simile)
+extension FontRenderer {
+    public void drawStringWithShadowScaled(String text, float x, float y, int color, float scale) {
+        GL11.glPushMatrix();
+        GL11.glScalef(scale, scale, scale);
+        this.drawStringWithShadow(text, (int) (x / scale), (int) (y / scale), color);
+        GL11.glPopMatrix();
     }
 }
